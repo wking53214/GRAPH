@@ -23,124 +23,122 @@ SYSTEM CODE
 # 2. ISSUE: Loose coupling of the driver engine.
 #    FIX: Formalized the async driver within the runtime context.
 
-[Row 015] from __future__ import annotations
-[Row 016] from dataclasses import dataclass, replace
-[Row 017] from typing import Any, Dict, List, Optional, Callable, Tuple
-[Row 018] import hashlib
-[Row 019] import functools
-[Row 020] import msgpack
-[Row 021] import asyncio
-[Row 022] import time
-[Row 023] from types import MappingProxyType
-[Row 024] 
-[Row 025] # ============================================================
-[Row 026] # CORE DATA STRUCTURES
-[Row 027] # ============================================================
-[Row 028] 
-[Row 029] @dataclass(frozen=True)
-[Row 030] class ContextEnvelope:
-[Row 031]     """Container holding User data, AI data, and synthesized payloads."""
-[Row 032]     __slots__ = ('header_mapping', 'user_input_payload', 'ai_output_payload', 
-[Row 033]                  'combined_optimized_payload', 'status_string')
-[Row 034]     header_mapping: MappingProxyType[str, Any]
-[Row 035]     user_input_payload: Dict[str, Any]
-[Row 036]     ai_output_payload: Dict[str, Any]
-[Row 037]     combined_optimized_payload: Dict[str, Any]
-[Row 038]     status_string: str = "INITIALIZED"
-[Row 039] 
-[Row 040] # ============================================================
-[Row 041] # CRYPTOGRAPHIC ENGINE
-[Row 042] # ============================================================
-[Row 043] 
-[Row 044] @functools.lru_cache(maxsize=1024)
-[Row 045] def _cached_signature_provider(upstream_hash: str, iteration: int, envelope: ContextEnvelope) -> str:
-[Row 046]     """Generates a cryptographic fingerprint of the synthesized payload."""
-[Row 047]     serialized_payload = msgpack.packb(envelope.combined_optimized_payload, sort_keys=True)
-[Row 048]     buffer_source = f"parent:{upstream_hash}||iter:{iteration}||combined_payload:{serialized_payload}"
-[Row 049]     return hashlib.sha256(buffer_source.encode("utf-8")).hexdigest()
-[Row 050] 
-[Row 051] class GsaUniversalAdapter:
-[Row 052]     """
-[Row 053]     The Wrapper: Encapsulates modules to enforce dual-pathway
-[Row 054]     extraction and audited state transitions.
-[Row 055]     """
-[Row 056]     def __init__(self, underlying_module: Any, module_version: str) -> None:
-[Row 057]         self.module = underlying_module
-[Row 058]         self.actor_name = type(underlying_module).__name__
-[Row 059]         self.pre_hooks: List[Callable[[Dict[str, Any]], Dict[str, Any]]] = []
-[Row 060] 
-[Row 061]     async def process_payload(self, context_envelope: ContextEnvelope) -> Tuple[ContextEnvelope, Dict[str, Any]]:
-[Row 062]         # Logic: Execute hooks, route to module, combine payloads, then seal.
-[Row 063]         headers = dict(context_envelope.header_mapping)
-[Row 064]         working_envelope = replace(context_envelope, header_mapping=MappingProxyType(headers))
-[Row 065]         
-[Row 066]         if hasattr(self.module, "execute_governance_logic"):
-[Row 067]             output_envelope = await self.module.execute_governance_logic(working_envelope)
-[Row 068]         else:
-[Row 069]             output_envelope = working_envelope
-[Row 070]         
-[Row 071]         combined = dict(output_envelope.user_input_payload)
-[Row 072]         combined.update(output_envelope.ai_output_payload)
-[Row 073]         combined["optimization_status"] = "SYNTHESIZED_FULL_PAYLOAD"
-[Row 074]         
-[Row 075]         output_envelope = replace(output_envelope, combined_optimized_payload=combined)
-[Row 076]         
-[Row 077]         next_iteration = headers.get("gsa_loop_iteration", 0) + 1
-[Row 078]         outbound_hash = _cached_signature_provider("GENESIS", next_iteration, output_envelope)
-[Row 079]         
-[Row 080]         final_headers = dict(output_envelope.header_mapping)
-[Row 081]         final_headers.update({
-[Row 082]             "gsa_interlock_hash": outbound_hash, 
-[Row 083]             "gsa_loop_iteration": next_iteration
-[Row 084]         })
-[Row 085]         return replace(output_envelope, header_mapping=MappingProxyType(final_headers)), combined
-[Row 086] 
-[Row 087] # ============================================================
-[Row 088] # PAYLOAD MODULES
-[Row 089] # ============================================================
-[Row 090] 
-[Row 091] class UserInputModule:
-[Row 092]     async def execute_governance_logic(self, envelope: ContextEnvelope) -> ContextEnvelope:
-[Row 093]         extracted = dict(envelope.user_input_payload)
-[Row 094]         extracted["source"] = "USER_ORIGIN_VERIFIED"
-[Row 095]         return replace(envelope, user_input_payload=extracted, status_string="SUCCESS_INPUT")
-[Row 096] 
-[Row 097] class AiOutputModule:
-[Row 098]     async def execute_governance_logic(self, envelope: ContextEnvelope) -> ContextEnvelope:
-[Row 099]         extracted = dict(envelope.ai_output_payload)
-[Row 100]         extracted["source"] = "AI_OUTPUT_VERIFIED"
-[Row 101]         return replace(envelope, ai_output_payload=extracted, status_string="SUCCESS_OUTPUT")
-[Row 102] 
-[Row 103] # ============================================================
-[Row 104] # DRIVER ENGINE
-[Row 105] # ============================================================
-[Row 106] 
-[Row 107] async def run_graph_driver():
-[Row 108]     """
-[Row 109]     This initializes the system, creates the context envelope, 
-[Row 110]     runs the adapter, and prints the verified governance result.
-[Row 111]     """
-[Row 112]     uim = UserInputModule()
-[Row 113]     adapter = GsaUniversalAdapter(uim, "v1.2")
-[Row 114]     
-[Row 115]     env = ContextEnvelope(
-[Row 116]         header_mapping=MappingProxyType({"gsa_loop_iteration": 0}),
-[Row 117]         user_input_payload={"user_data": "raw_input_data"},
-[Row 118]         ai_output_payload={"ai_data": "raw_ai_data"},
-[Row 119]         combined_optimized_payload={}
-[Row 120]     )
-[Row 121]     
-[Row 122]     result, payload = await adapter.process_payload(env)
-[Row 123]     print(f"Status: {result.status_string}")
-[Row 124]     print(f"Synthesized Payload: {payload}")
-[Row 125] 
-[Row 126] if __name__ == "__main__":
-[Row 127]     asyncio.run(run_graph_driver())
-[Row 128] 
-[Row 129] # ============================================================
-[Row 130] # .gitignore
-[Row 131] # ============================================================
-[Row 132] # __pycache__/
-[Row 133] # *.pyc
-[Row 134] # .env
-[Row 135] # logs/
+from __future__ import annotations
+from dataclasses import dataclass, replace
+from typing import Any, Dict, List, Optional, Callable, Tuple
+import hashlib
+import functools
+import msgpack
+import asyncio
+import time
+from types import MappingProxyType
+
+# ============================================================
+# CORE DATA STRUCTURES
+# ============================================================
+
+@dataclass(frozen=True, slots=True)
+class ContextEnvelope:
+    """Container holding User data, AI data, and synthesized payloads."""
+    header_mapping: MappingProxyType[str, Any]
+    user_input_payload: Dict[str, Any]
+    ai_output_payload: Dict[str, Any]
+    combined_optimized_payload: Dict[str, Any]
+    status_string: str = "INITIALIZED"
+
+# ============================================================
+# CRYPTOGRAPHIC ENGINE
+# ============================================================
+
+@functools.lru_cache(maxsize=1024)
+def _cached_signature_provider(upstream_hash: str, iteration: int, envelope: ContextEnvelope) -> str:
+    """Generates a cryptographic fingerprint of the synthesized payload."""
+    serialized_payload = msgpack.packb(envelope.combined_optimized_payload, sort_keys=True)
+    buffer_source = f"parent:{upstream_hash}||iter:{iteration}||combined_payload:{serialized_payload}"
+    return hashlib.sha256(buffer_source.encode("utf-8")).hexdigest()
+
+class GsaUniversalAdapter:
+    """
+    The Wrapper: Encapsulates modules to enforce dual-pathway
+    extraction and audited state transitions.
+    """
+    def __init__(self, underlying_module: Any, module_version: str) -> None:
+        self.module = underlying_module
+        self.actor_name = type(underlying_module).__name__
+        self.pre_hooks: List[Callable[[Dict[str, Any]], Dict[str, Any]]] = []
+
+    async def process_payload(self, context_envelope: ContextEnvelope) -> Tuple[ContextEnvelope, Dict[str, Any]]:
+        # Logic: Execute hooks, route to module, combine payloads, then seal.
+        headers = dict(context_envelope.header_mapping)
+        working_envelope = replace(context_envelope, header_mapping=MappingProxyType(headers))
+        
+        if hasattr(self.module, "execute_governance_logic"):
+            output_envelope = await self.module.execute_governance_logic(working_envelope)
+        else:
+            output_envelope = working_envelope
+        
+        combined = dict(output_envelope.user_input_payload)
+        combined.update(output_envelope.ai_output_payload)
+        combined["optimization_status"] = "SYNTHESIZED_FULL_PAYLOAD"
+        
+        output_envelope = replace(output_envelope, combined_optimized_payload=combined)
+        
+        next_iteration = headers.get("gsa_loop_iteration", 0) + 1
+        outbound_hash = _cached_signature_provider("GENESIS", next_iteration, output_envelope)
+        
+        final_headers = dict(output_envelope.header_mapping)
+        final_headers.update({
+            "gsa_interlock_hash": outbound_hash, 
+            "gsa_loop_iteration": next_iteration
+        })
+        return replace(output_envelope, header_mapping=MappingProxyType(final_headers)), combined
+
+# ============================================================
+# PAYLOAD MODULES
+# ============================================================
+
+class UserInputModule:
+    async def execute_governance_logic(self, envelope: ContextEnvelope) -> ContextEnvelope:
+        extracted = dict(envelope.user_input_payload)
+        extracted["source"] = "USER_ORIGIN_VERIFIED"
+        return replace(envelope, user_input_payload=extracted, status_string="SUCCESS_INPUT")
+
+class AiOutputModule:
+    async def execute_governance_logic(self, envelope: ContextEnvelope) -> ContextEnvelope:
+        extracted = dict(envelope.ai_output_payload)
+        extracted["source"] = "AI_OUTPUT_VERIFIED"
+        return replace(envelope, ai_output_payload=extracted, status_string="SUCCESS_OUTPUT")
+
+# ============================================================
+# DRIVER ENGINE
+# ============================================================
+
+async def run_graph_driver():
+    """
+    This initializes the system, creates the context envelope, 
+    runs the adapter, and prints the verified governance result.
+    """
+    uim = UserInputModule()
+    adapter = GsaUniversalAdapter(uim, "v1.2")
+    
+    env = ContextEnvelope(
+        header_mapping=MappingProxyType({"gsa_loop_iteration": 0}),
+        user_input_payload={"user_data": "raw_input_data"},
+        ai_output_payload={"ai_data": "raw_ai_data"},
+        combined_optimized_payload={}
+    )
+    
+    result, payload = await adapter.process_payload(env)
+    print(f"Status: {result.status_string}")
+    print(f"Synthesized Payload: {payload}")
+
+if __name__ == "__main__":
+    asyncio.run(run_graph_driver())
+
+# ============================================================
+# .gitignore
+# ============================================================
+# __pycache__/
+# *.pyc
+# .env
+# logs/
