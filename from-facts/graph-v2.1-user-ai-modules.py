@@ -33,10 +33,9 @@ class GeminiSanitizer:
 # ============================================================
 # 2. CORE DATA STRUCTURES
 # ============================================================
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ContextEnvelope:
    """Immutable state container ensuring audit history stability."""
-   __slots__ = ('header_mapping', 'payload_data', 'session_state_mapping', 'status_string')
    header_mapping: MappingProxyType[str, Any]
    payload_data: Dict[str, Any]
    session_state_mapping: Dict[str, Any]
@@ -68,34 +67,40 @@ class GsaUniversalAdapter:
        self.module_version = module_version
        self.sanitizer = sanitizer
        self.pre_hooks: List[Callable] = []
+       self.post_hooks: List[Callable] = []
 
    async def process_payload(self, context_envelope: ContextEnvelope) -> ContextEnvelope:
        headers = dict(context_envelope.header_mapping)
-       
+       for hook in self.pre_hooks:
+           headers = hook(headers)
+
+       working_envelope = replace(context_envelope, header_mapping=MappingProxyType(headers))
+
        # Apply Sanitization pre-processing layer
-       if self.sanitizer and "raw_text" in context_envelope.payload_data:
+       if self.sanitizer and "raw_text" in working_envelope.payload_data:
            # Create a mutable copy of payload to inject sanitized data
-           new_payload = dict(context_envelope.payload_data)
+           new_payload = dict(working_envelope.payload_data)
            new_payload["sanitized_text"] = self.sanitizer.sanitize(
                [new_payload["raw_text"]]
            )
-           working_envelope = replace(context_envelope, payload_data=new_payload)
-       else:
-           working_envelope = context_envelope
+           working_envelope = replace(working_envelope, payload_data=new_payload)
 
        # Execute governance logic
        if hasattr(self.module, "execute_governance_logic"):
            output_envelope = await self.module.execute_governance_logic(working_envelope)
        else:
            output_envelope = working_envelope
-       
+
+       final_headers = dict(output_envelope.header_mapping)
+       for hook in self.post_hooks:
+           final_headers = hook(final_headers)
+
        # Temporal Interlock & Signing
        next_iteration = headers.get("gsa_loop_iteration", 0) + 1
        outbound_hash = _cached_signature_provider("GENESIS", next_iteration, output_envelope)
-       
-       final_headers = dict(output_envelope.header_mapping)
+
        final_headers.update({"gsa_interlock_hash": outbound_hash, "gsa_loop_iteration": next_iteration})
-       
+
        return replace(output_envelope, header_mapping=MappingProxyType(final_headers))
 
 # ============================================================

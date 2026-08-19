@@ -8,21 +8,49 @@ rename), so this name wasn't a blocker on doing the consolidation.
 
 ## Contents
 
-- `from-facts/` — everything from the former
-  [FACTS](https://github.com/wking53214/FACTS) repo except its
-  AST-extractor-signature files (those were duplicates of the recurring
-  `GraphExtractor`/`extract_graph` tool and went to `synapsis` instead).
-  Includes `graph-module-registry.py` — the one file in the whole
-  cross-repo sweep that's genuinely close to working (parses clean once
-  `[Row ###]` tags are stripped, one small dataclass bug away from
-  running) — plus the other `graph-v2.*.py` variants,
-  `graph-cryptographic-engine.py`, `graph-adapter-hooks.py`, and
-  `graph-context-envelope.py`.
+- `from-facts/` — real GRAPH code, consolidated down to two canonical,
+  working implementations after a first integration pass (row-tag
+  stripping, a `__slots__` dataclass bug fix, dependency install, and
+  merging each variant family's best features together — see git log
+  for the full account):
 
-  Note: `graph-v2.3-synthesis-payload.py` contains an embedded
-  `MAGNA_Orchestrator`/`ComputeNode`/`ChatAggregator` side-thread that's
-  unrelated to GRAPH — left in place as-is since separating it out would
-  be a code edit, out of scope for this move-only pass.
+  - `graph-module-registry.py`: the "dual-payload" family — extracts
+    user input and AI output separately, then combines them into a
+    synthesized full payload. Has pre/post hooks, stores
+    `module_version`, tags output with `extraction_mode`, and includes
+    a runnable demo driver (`run_graph_driver`).
+  - `graph-v2.1-user-ai-modules.py`: the "simple" family — a single
+    `payload_data` + `session_state_mapping` envelope, with an
+    optional `GeminiSanitizer` pre-processing stage. Has pre/post
+    hooks and is the only variant that got envelope immutability right
+    (copies the payload dict and uses `dataclasses.replace()` instead
+    of mutating in place).
+
+  Both require `msgpack` (`requirements.txt`) and both run into the
+  same known, disclosed, not-yet-fixed bug: `_cached_signature_provider`
+  is `@functools.lru_cache`'d but takes an argument containing a
+  `MappingProxyType`/`dict`, which isn't hashable — a real design
+  decision (serialize-then-cache vs. drop caching vs. restructure the
+  payload type), not something fixed unilaterally in this pass.
+
+  Eight other files (`graph-cryptographic-engine.py` — a pure
+  duplicate of `graph-module-registry.py`; `graph-v2.1-indexed-audited.py`,
+  `graph-v2.3-extraction-logic.py`, `graph-v2.3-indexed-driver.py`,
+  `graph-adapter-hooks.py` — each had all their working, non-duplicate
+  logic folded into one of the two canonical files above; and
+  `graph-v2.1-flattened-base.py`, `graph-v2.3-driver-enabled.py`,
+  `graph-v2.3-dual-extract-combined.py`, `graph-context-envelope.py` —
+  genuinely flattened, single-line files with no real code left to
+  recover) were removed as redundant once their content was accounted
+  for elsewhere.
+
+  `graph-v2.3-synthesis-payload.py` remains untouched — it's an
+  embedded `MAGNA_Orchestrator`/`ComputeNode`/`ChatAggregator`
+  side-thread, unrelated to GRAPH.
+
+  AST-extractor-signature files that were also found in this repo went
+  to `synapsis` instead (the recurring `GraphExtractor`/`extract_graph`
+  tool, not GRAPH content).
 
 - `gaps-kernel/` — `gaps_multilayer_governance_source.py`/`_adapter.py`,
   moved here from EDDP (formerly Data_files). This is the real GAPS
@@ -36,6 +64,6 @@ The former `FACTS` repo still exists on GitHub but now only contains
 `PROVENANCE.md`/`TRANSCRIPT.md` (the historical record) — left in place
 for review, not auto-deleted.
 
-This is a pure content move (files relocated, git history not
-preserved cross-repo) — no code edits, bug fixes, or class renames were
-made as part of this pass. That's a separate, later pass.
+`gaps-kernel/`'s content is unrelated to `from-facts/`'s integration
+work above and untouched since the original move — files relocated,
+git history not preserved cross-repo, no code edits.

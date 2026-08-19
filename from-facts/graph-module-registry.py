@@ -65,31 +65,40 @@ class GsaUniversalAdapter:
     def __init__(self, underlying_module: Any, module_version: str) -> None:
         self.module = underlying_module
         self.actor_name = type(underlying_module).__name__
+        self.module_version = module_version
         self.pre_hooks: List[Callable[[Dict[str, Any]], Dict[str, Any]]] = []
+        self.post_hooks: List[Callable[[Dict[str, Any]], Dict[str, Any]]] = []
 
     async def process_payload(self, context_envelope: ContextEnvelope) -> Tuple[ContextEnvelope, Dict[str, Any]]:
         # Logic: Execute hooks, route to module, combine payloads, then seal.
         headers = dict(context_envelope.header_mapping)
+        for hook in self.pre_hooks:
+            headers = hook(headers)
+
         working_envelope = replace(context_envelope, header_mapping=MappingProxyType(headers))
-        
+
         if hasattr(self.module, "execute_governance_logic"):
             output_envelope = await self.module.execute_governance_logic(working_envelope)
         else:
             output_envelope = working_envelope
-        
+
         combined = dict(output_envelope.user_input_payload)
         combined.update(output_envelope.ai_output_payload)
         combined["optimization_status"] = "SYNTHESIZED_FULL_PAYLOAD"
-        
+
         output_envelope = replace(output_envelope, combined_optimized_payload=combined)
-        
+
+        final_headers = dict(output_envelope.header_mapping)
+        for hook in self.post_hooks:
+            final_headers = hook(final_headers)
+
         next_iteration = headers.get("gsa_loop_iteration", 0) + 1
         outbound_hash = _cached_signature_provider("GENESIS", next_iteration, output_envelope)
-        
-        final_headers = dict(output_envelope.header_mapping)
+
         final_headers.update({
-            "gsa_interlock_hash": outbound_hash, 
-            "gsa_loop_iteration": next_iteration
+            "gsa_interlock_hash": outbound_hash,
+            "gsa_loop_iteration": next_iteration,
+            "extraction_mode": "DUAL_COMBINED"
         })
         return replace(output_envelope, header_mapping=MappingProxyType(final_headers)), combined
 
