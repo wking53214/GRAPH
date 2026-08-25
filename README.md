@@ -1,69 +1,541 @@
 # GRAPH
 
-**Name is provisional.** GRAPH (Governance, Routing, and Anchor
-Processing Hierarchy) previously had no dedicated repo of its own —
-almost all of its content was sitting in a repo named `FACTS`, despite
-the name mismatch. Renaming this repo later is trivial (Settings →
-rename), so this name wasn't a blocker on doing the consolidation.
+## Governance, Routing, and Anchor Processing Hierarchy
 
-## Contents
+> **Status: Consolidated architectural repository / integration baseline**
+>
+> The name GRAPH is provisional. The repository currently brings together two related bodies of governance-oriented processing code and the GAPS Kernel as a consolidated architectural workspace.
 
-- `from-facts/` — real GRAPH code, consolidated down to two canonical,
-  working implementations after a first integration pass (row-tag
-  stripping, a `__slots__` dataclass bug fix, dependency install, and
-  merging each variant family's best features together — see git log
-  for the full account):
+---
 
-  - `graph-module-registry.py`: the "dual-payload" family — extracts
-    user input and AI output separately, then combines them into a
-    synthesized full payload. Has pre/post hooks, stores
-    `module_version`, tags output with `extraction_mode`, and includes
-    a runnable demo driver (`run_graph_driver`).
-  - `graph-v2.1-user-ai-modules.py`: the "simple" family — a single
-    `payload_data` + `session_state_mapping` envelope, with an
-    optional `GeminiSanitizer` pre-processing stage. Has pre/post
-    hooks and is the only variant that got envelope immutability right
-    (copies the payload dict and uses `dataclasses.replace()` instead
-    of mutating in place).
+# Overview
 
-  Both require `msgpack` (`requirements.txt`) and both run into the
-  same known, disclosed, not-yet-fixed bug: `_cached_signature_provider`
-  is `@functools.lru_cache`'d but takes an argument containing a
-  `MappingProxyType`/`dict`, which isn't hashable — a real design
-  decision (serialize-then-cache vs. drop caching vs. restructure the
-  payload type), not something fixed unilaterally in this pass.
+GRAPH is an architectural construct for representing, processing, and preserving structured relationships between user-originated input, AI-generated output, session context, module identity, and governance-layer processing.
 
-  Eight other files (`graph-cryptographic-engine.py` — a pure
-  duplicate of `graph-module-registry.py`; `graph-v2.1-indexed-audited.py`,
-  `graph-v2.3-extraction-logic.py`, `graph-v2.3-indexed-driver.py`,
-  `graph-adapter-hooks.py` — each had all their working, non-duplicate
-  logic folded into one of the two canonical files above; and
-  `graph-v2.1-flattened-base.py`, `graph-v2.3-driver-enabled.py`,
-  `graph-v2.3-dual-extract-combined.py`, `graph-context-envelope.py` —
-  genuinely flattened, single-line files with no real code left to
-  recover) were removed as redundant once their content was accounted
-  for elsewhere.
+Its central concern is the controlled movement of information through a system while maintaining sufficient structure to distinguish:
 
-  `graph-v2.3-synthesis-payload.py` remains untouched — it's an
-  embedded `MAGNA_Orchestrator`/`ComputeNode`/`ChatAggregator`
-  side-thread, unrelated to GRAPH.
+- what entered the system;
+- what the system generated;
+- what contextual state accompanied the interaction;
+- which module processed the information;
+- how the payload was transformed;
+- and what governance information should accompany the resulting representation.
 
-  AST-extractor-signature files that were also found in this repo went
-  to `synapsis` instead (the recurring `GraphExtractor`/`extract_graph`
-  tool, not GRAPH content).
+The current repository is a consolidation of previously separated implementations.
 
-- `gaps-kernel/` — `gaps_multilayer_governance_source.py`/`_adapter.py`,
-  moved here from EDDP (formerly Data_files). This is the real GAPS
-  KERNEL implementation (the `register_as_module` decorator referenced
-  throughout ARCHIVE's report-generation prompts). GRAPH and GAPS are
-  closely related governance-layer concepts, folded together here as a
-  starting point — if William would rather split them into separate
-  repos later, that's an easy follow-up, not a re-do.
+It should therefore be understood as an **architectural integration baseline**, rather than as a finished single-purpose production product.
 
-The former `FACTS` repo still exists on GitHub but now only contains
-`PROVENANCE.md`/`TRANSCRIPT.md` (the historical record) — left in place
-for review, not auto-deleted.
+---
 
-`gaps-kernel/`'s content is unrelated to `from-facts/`'s integration
-work above and untouched since the original move — files relocated,
-git history not preserved cross-repo, no code edits.
+# Core Concept
+
+GRAPH can be understood as a structured processing path:
+
+    USER INPUT
+        │
+        ▼
+    INPUT REPRESENTATION
+        │
+        ▼
+    MODULE PROCESSING
+        │
+        ├── module identity
+        ├── module version
+        ├── processing hooks
+        └── extraction mode
+        │
+        ▼
+    AI / SYSTEM OUTPUT
+        │
+        ▼
+    SYNTHESIZED PAYLOAD
+        │
+        ▼
+    GOVERNANCE / DOWNSTREAM PROCESSING
+
+The purpose is to retain structural relationships between the different pieces of information rather than flattening them into an undifferentiated payload.
+
+---
+
+# Why GRAPH Exists
+
+Complex AI systems often combine several categories of information:
+
+    HUMAN INPUT
+    AI OUTPUT
+    SESSION STATE
+    MODULE STATE
+    PROCESSING METADATA
+    GOVERNANCE INFORMATION
+
+If those elements are merged without preserving their relationships, downstream systems may no longer be able to determine where a piece of information originated or how it was produced.
+
+GRAPH addresses this problem by treating the payload as a structured object whose components retain identifiable relationships.
+
+---
+
+# User / AI Separation
+
+One of the current GRAPH implementations explicitly separates user input from AI output before synthesizing them into a combined payload.
+
+Conceptually:
+
+    ┌──────────────────┐
+    │   USER INPUT     │
+    └────────┬─────────┘
+             │
+             ▼
+       USER PAYLOAD
+             │
+             │
+             ├───────────────┐
+             │               │
+             ▼               ▼
+       PROCESSING       AI OUTPUT
+             │               │
+             └───────┬───────┘
+                     │
+                     ▼
+             SYNTHESIZED PAYLOAD
+
+This separation preserves an important provenance distinction:
+
+    WHAT THE USER PROVIDED
+
+versus:
+
+    WHAT THE SYSTEM GENERATED
+
+The two can subsequently be combined into a representation suitable for downstream processing without requiring their origins to be forgotten.
+
+---
+
+# Dual-Payload Architecture
+
+The `graph-module-registry.py` implementation represents the dual-payload family.
+
+It:
+
+- extracts user input separately;
+- extracts AI output separately;
+- combines the two into a synthesized full payload;
+- supports pre-processing hooks;
+- supports post-processing hooks;
+- records module version;
+- and identifies the extraction mode used.
+
+This provides a structured representation of both sides of an interaction.
+
+---
+
+# Envelope Architecture
+
+The `graph-v2.1-user-ai-modules.py` implementation represents a simpler envelope family.
+
+It uses:
+
+    payload_data
+    +
+    session_state_mapping
+
+as the primary structured representation.
+
+It also provides an optional preprocessing stage.
+
+This implementation is particularly notable because it uses a copied payload and `dataclasses.replace()` rather than mutating the original envelope in place.
+
+That provides a stronger immutability boundary around the represented payload.
+
+---
+
+# Immutability
+
+An important architectural concern demonstrated by the current implementation is preservation of the original envelope.
+
+The preferred pattern is:
+
+    ORIGINAL PAYLOAD
+          │
+          ▼
+       COPY / REPLACE
+          │
+          ▼
+    TRANSFORMED PAYLOAD
+
+rather than:
+
+    ORIGINAL PAYLOAD
+          │
+          ▼
+    IN-PLACE MUTATION
+
+The distinction matters when payloads represent evidence, provenance, or governed state.
+
+Once a payload has entered a processing boundary, downstream transformation should not silently rewrite the original representation.
+
+---
+
+# Module Identity
+
+GRAPH preserves module-level information associated with processing.
+
+This can include:
+
+- module identity;
+- module version;
+- extraction mode;
+- processing hooks;
+- and associated payload information.
+
+The resulting structure allows downstream systems to understand not merely the resulting data but something about the processing path that produced it.
+
+Conceptually:
+
+    PAYLOAD
+       │
+       ▼
+    MODULE
+       │
+       ├── identity
+       ├── version
+       └── processing mode
+       │
+       ▼
+    RESULT
+
+This creates a relationship between data and the component responsible for processing it.
+
+---
+
+# Processing Hooks
+
+The canonical GRAPH implementations provide pre- and post-processing hooks.
+
+Conceptually:
+
+    INPUT
+      │
+      ▼
+    PRE-HOOK
+      │
+      ▼
+    CORE PROCESSING
+      │
+      ▼
+    POST-HOOK
+      │
+      ▼
+    OUTPUT
+
+This permits additional processing to be introduced at defined boundaries without necessarily rewriting the core processing path.
+
+---
+
+# Extraction Mode
+
+The dual-payload implementation records the extraction mode associated with the resulting payload.
+
+This is significant because extraction is itself a transformation.
+
+Rather than treating the final payload as though it appeared directly from the source, the architecture can retain information about how the payload was constructed.
+
+The distinction is:
+
+    SOURCE
+
+versus:
+
+    SOURCE
+       │
+       ▼
+    EXTRACTION METHOD
+       │
+       ▼
+    REPRESENTATION
+
+---
+
+# Session Context
+
+The envelope implementation incorporates session-state mapping alongside payload data.
+
+This recognizes that the meaning of an individual payload may depend upon contextual state.
+
+Conceptually:
+
+    PAYLOAD
+       +
+    SESSION STATE
+       │
+       ▼
+    CONTEXTUAL REPRESENTATION
+
+This allows downstream processing to distinguish the data being processed from contextual information surrounding that data.
+
+---
+
+# Governance Relationship
+
+GRAPH's architectural concern is closely related to governance because governance requires more than the final answer or action.
+
+A governed system may need to know:
+
+- what information entered the system;
+- what the AI produced;
+- what context existed;
+- what module processed it;
+- what transformation occurred;
+- and what representation was passed onward.
+
+GRAPH provides structures through which those relationships can remain visible.
+
+It therefore operates naturally as an information-structuring layer within a larger governance architecture.
+
+---
+
+# Relationship to GAPS KERNEL
+
+The repository currently contains a `gaps-kernel/` directory containing the GAPS multilayer governance source and adapter.
+
+This component was moved into GRAPH from EDDP.
+
+It represents a related governance-layer concept, but it is **not the same implementation as the `from-facts/` GRAPH processing code**.
+
+The two components should therefore be understood as related architectural material currently consolidated within the same repository rather than as a single inseparable implementation.
+
+Conceptually:
+
+    GRAPH PROCESSING
+         │
+         │ structured information /
+         │ provenance relationships
+         ▼
+    GOVERNANCE LAYER
+         │
+         ▼
+    GAPS KERNEL
+
+The exact long-term repository boundary may change as the architecture matures.
+
+---
+
+# Repository Consolidation Status
+
+GRAPH is currently the result of consolidation.
+
+The original material was distributed across earlier repositories, including `FACTS`.
+
+The current repository preserves the working GRAPH implementations while removing redundant or nonfunctional variants.
+
+The consolidation resulted in two canonical GRAPH implementations:
+
+    graph-module-registry.py
+
+and:
+
+    graph-v2.1-user-ai-modules.py
+
+Other earlier variants had their useful logic incorporated into those canonical implementations or were identified as redundant.
+
+This means the repository should be regarded as a **consolidated architectural baseline**.
+
+---
+
+# Historical Material
+
+The former `FACTS` repository remains separately preserved as a historical record.
+
+Its remaining material includes provenance and transcript documentation associated with the development history.
+
+That historical repository should not be confused with the current GRAPH implementation.
+
+GRAPH represents the consolidated working architectural material.
+
+---
+
+# Known Limitation
+
+Both canonical GRAPH implementations currently contain a known issue involving the cached signature provider.
+
+The implementation uses `functools.lru_cache` around a function receiving an argument containing an unhashable mapping structure.
+
+Conceptually:
+
+    CACHED FUNCTION
+          │
+          ▼
+    SIGNATURE ARGUMENT
+          │
+          ▼
+    UNHASHABLE MAPPING
+          │
+          ▼
+       FAILURE
+
+This has not been silently "fixed" because the correct resolution is an architectural decision.
+
+Possible approaches include:
+
+- serializing the payload before caching;
+- removing the cache;
+- or restructuring the payload type so that the cached argument is hashable.
+
+The repository therefore preserves this issue as an explicit known limitation rather than presenting the current implementation as defect-free.
+
+---
+
+# Dependency
+
+The canonical GRAPH implementations require `msgpack`.
+
+The dependency is declared in the repository's requirements.
+
+---
+
+# Domain Independence
+
+The underlying GRAPH processing concept is not inherently restricted to one industry.
+
+The architectural problem it addresses occurs whenever a system must preserve relationships between:
+
+- source information;
+- generated information;
+- context;
+- processing modules;
+- transformations;
+- and governance metadata.
+
+Potential applications include:
+
+- AI governance;
+- enterprise workflow;
+- autonomous systems;
+- research systems;
+- software agents;
+- regulated information processing;
+- knowledge systems;
+- and other environments where provenance and contextual relationships matter.
+
+These represent potential applications of the architecture rather than claims that each is currently implemented.
+
+---
+
+# What GRAPH Is Not
+
+GRAPH should not currently be described as:
+
+- a finished enterprise governance platform;
+- a complete graph database;
+- a universal knowledge graph;
+- a complete provenance system;
+- or a fully production-hardened governance framework.
+
+The repository is a consolidated architectural implementation containing working components, known limitations, and related governance-layer material.
+
+---
+
+# Architectural Model
+
+The core GRAPH concept can be summarized as:
+
+    ┌─────────────────────┐
+    │     HUMAN INPUT     │
+    └──────────┬──────────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │   INPUT PAYLOAD     │
+    └──────────┬──────────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │ MODULE / PROCESSING  │
+    │                     │
+    │ identity            │
+    │ version             │
+    │ extraction mode     │
+    │ pre/post hooks      │
+    └──────────┬──────────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │     AI OUTPUT       │
+    └──────────┬──────────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │ SYNTHESIZED PAYLOAD │
+    └──────────┬──────────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │ GOVERNANCE CONTEXT  │
+    └─────────────────────┘
+
+The alternative envelope implementation simplifies the structure:
+
+    ┌─────────────────────┐
+    │    PAYLOAD DATA     │
+    ├─────────────────────┤
+    │ SESSION STATE       │
+    ├─────────────────────┤
+    │ PROCESSING CONTEXT  │
+    └─────────────────────┘
+
+Both approaches share the same underlying concern:
+
+> Preserve the relationships and provenance surrounding information as it moves through a processing system.
+
+---
+
+# Design Principles
+
+## Preserve Origin
+
+Human-originated information and AI-generated information should remain distinguishable.
+
+## Preserve Context
+
+Payloads should not be separated from the contextual state required to understand them.
+
+## Preserve Processing Identity
+
+Where meaningful, the system should retain information about which module and version processed the information.
+
+## Make Transformation Explicit
+
+Extraction and synthesis should be identifiable processing operations.
+
+## Prefer Immutable Envelopes
+
+Original representations should not be silently mutated during downstream processing.
+
+## Preserve Governance Context
+
+Information required for later governance should remain structurally available.
+
+## Consolidate Without Concealing
+
+Redundant implementations should be consolidated, but known limitations should remain explicitly documented.
+
+---
+
+# Current Status
+
+GRAPH is a consolidated architectural repository.
+
+Its current working material demonstrates two related approaches to structured user/AI payload processing, while also containing the GAPS Kernel as a related governance-layer component consolidated from earlier work.
+
+The repository should therefore be understood as:
+
+> **A developing architecture for preserving structured relationships between human input, AI output, context, processing modules, transformations, and governance information, currently represented through consolidated implementations and related governance-layer components.**
+
+The current code provides a concrete demonstration of these concepts while retaining known implementation limitations for further architectural resolution.
+
+---
+
+# Central Proposition
+
+> **Information moving through a governed AI system should not lose the relationships that explain where it came from, what produced it, what context surrounded it, or how it was transformed.**
+
+GRAPH provides a structural foundation for preserving those relationships.
