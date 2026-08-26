@@ -303,6 +303,8 @@ It represents a related governance-layer concept, but it is **not the same imple
 
 The two components should therefore be understood as related architectural material currently consolidated within the same repository rather than as a single inseparable implementation.
 
+`gaps-kernel/gaps_multilayer_governance_adapter.py` implements a seven-layer governance pipeline (`L1FoundationProcessor` through `L7SurfaceOutput`, bound together by `CoreOrchestratorBinder`) and has been verified to run end-to-end with no external dependencies beyond the standard library — `python3 gaps_multilayer_governance_adapter.py` executes the full pipeline and prints a clinical summary. This had not previously been confirmed; see Known Limitations below for what's still missing relative to `gaps_multilayer_governance_source.py`.
+
 Conceptually:
 
     GRAPH PROCESSING
@@ -353,7 +355,9 @@ GRAPH represents the consolidated working architectural material.
 
 ---
 
-# Known Limitation
+# Known Limitations
+
+## from-facts/: cached signature provider
 
 Both canonical GRAPH implementations currently contain a known issue involving the cached signature provider.
 
@@ -381,6 +385,18 @@ Possible approaches include:
 - or restructuring the payload type so that the cached argument is hashable.
 
 The repository therefore preserves this issue as an explicit known limitation rather than presenting the current implementation as defect-free.
+
+## gaps-kernel/: unrecovered functionality in the flattened source
+
+`gaps-kernel/gaps_multilayer_governance_source.py` is a flattened, single-line raw paste (no real line breaks) and does not parse as Python — the same class of defect the `from-facts/` flattened variants had before that directory's Step 1–3 consolidation. Unlike those variants, though, this one is **not** simply redundant with the working `gaps_multilayer_governance_adapter.py` file: it contains real logic that was never carried over.
+
+Specifically, `source.py` implements:
+
+- **Dynamic layer-ordering**: a `_calculate_optimal_order` method (with a nested `score_order` scoring function) that evaluates multiple candidate execution orders for the seven governance layers and selects the best-scoring one, rather than using a fixed sequence.
+- **Self-audit**: a `_red_blue_audit` method that inspects a module instance for specific risk patterns (e.g. a stateful internal map exposed without a thread-safe accessor, oversized tokens) and proposes corresponding patches.
+- A parameterized `register_as_module(name)` decorator factory, letting a module register under an explicit name independent of its class name — `adapter.py`'s version is a simpler unparameterized decorator that always keys by `cls.__name__`.
+
+None of the three exist in `adapter.py`, which uses a static `base_order` list and has no audit method. Because `source.py` is flattened and unparseable, this logic is currently unavailable anywhere in runnable form — porting it into `adapter.py` would be real feature work (a design decision about whether dynamic ordering and self-audit belong in the pipeline), not a mechanical fix, so it's documented here rather than guess-ported.
 
 ---
 
