@@ -398,6 +398,12 @@ Specifically, `source.py` implements:
 
 None of the three exist in `adapter.py`, which uses a static `base_order` list and has no audit method. Because `source.py` is flattened and unparseable, this logic is currently unavailable anywhere in runnable form — porting it into `adapter.py` would be real feature work (a design decision about whether dynamic ordering and self-audit belong in the pipeline), not a mechanical fix, so it's documented here rather than guess-ported.
 
+## from-code/: source-code AST walker (reconstructed)
+
+`from-code/ast_graph_extractor.py` is a static-analysis extractor: it walks a Python file's AST and produces a call/definition graph (`Node`/`Edge`/`Graph`), a different problem from the provenance-graph work in `from-facts/` and `gaps-kernel/`, neither of which reads source code. It was reconstructed from a flattened single-line paste in the `CODE` repo (`content-pipeline-user-source.py`) and extended — a ~200-line architecture-notes header, frozen `Node`/`Edge`, a `total_row_count` field on `Graph`, and a `__main__` demo. It parses and runs (`python3 from-code/ast_graph_extractor.py`).
+
+Known quirk, left as-is: `resolve_attr_chain` returns a partial dotted name for chained calls like `make_factory().build()`, so such a call records an edge to `build` — which collides with a same-named top-level function if one exists. The sibling `DeterministicGraphExtractor` from the same source (a two-method stub) was not carried over. The "COMPILED KERNEL MAP" sub-kernels named in the header are conceptual, not real files in this repo.
+
 ---
 
 # Dependency
