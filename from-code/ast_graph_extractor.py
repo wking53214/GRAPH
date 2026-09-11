@@ -247,27 +247,14 @@
 # ===============================================================================
 from __future__ import annotations
 import ast
-from dataclasses import dataclass, asdict
 from typing import Dict, List, Set, Optional
 
-@dataclass(frozen=True)
-class Node:
-    id: str
-    kind: str
-    file: str
-
-@dataclass(frozen=True)
-class Edge:
-    src: str
-    dst: str
-    kind: str
-    evidence: str
-
-@dataclass
-class Graph:
-    nodes: Dict[str, Node]
-    edges: List[Edge]
-    total_row_count: int = 0
+# Node, Edge and Graph are the library's shared graph substrate and live in
+# the cns package (the central nervous system: contracts only). This file
+# carried its own copy until 2026-09-11; the copy was byte-for-byte the
+# canonical one, so nothing about the output changed. The walk below is
+# GRAPH's own and stays here.
+from cns.graph import Node, Edge, Graph, graph_to_dict  # noqa: F401  (graph_to_dict re-exported)
 
 class GraphExtractor(ast.NodeVisitor):
     def __init__(self, filename: str = ""):
@@ -359,13 +346,6 @@ def extract_graph(source: str, filename: str = "") -> Graph:
     extractor.visit(tree)
     total_lines = len(source.splitlines()) if source else 0
     return Graph(nodes=extractor.nodes, edges=extractor.edges, total_row_count=total_lines)
-
-def graph_to_dict(graph: Graph) -> dict:
-    return {
-        "nodes": [asdict(n) for n in graph.nodes.values()],
-        "edges": [asdict(e) for e in graph.edges],
-        "total_row_count": graph.total_row_count
-    }
 
 
 if __name__ == "__main__":

@@ -1,1 +1,3 @@
 msgpack
+# The shared graph substrate (Node/Edge/Graph). Private; pinned to a commit.
+cns @ git+https://github.com/wking53214/cns.git@9f8f3fed8c33d7bd299c715e1416bed9bcbd0a1c
