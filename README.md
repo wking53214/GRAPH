@@ -42,4 +42,4 @@ sentinel_os sage_k is a different graph
 
 **Safe to archive.**
 
-Apache-2.0.
+Proprietary. Copyright (c) 2026 William King. All rights reserved. See LICENSE.
